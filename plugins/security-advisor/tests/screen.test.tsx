@@ -1,4 +1,4 @@
-import type { On } from 'claude-code'
+import type { On, PromptEditInput, PromptEditResult } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
 import { halfBlocks, pwnedRaster, pwnedSvg, spans } from '../hooks/art'
@@ -43,6 +43,7 @@ function engine(on: On, surfaces: Surface[], opened: string[]) {
     return { value: { isPlaced: true } }
   })
   on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('prompt.edit', (_, e) => ({ text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
@@ -162,6 +163,55 @@ test('the band animates on the timer, on the terminal and in VS Code', async ($,
     const before = JSON.stringify(await ui.drawn())
     await clock.advance(250)
     expect(JSON.stringify(await ui.drawn())).not.toBe(before)
+    await ui.unmount()
+  }
+})
+
+/**
+ * Raises `prompt.edit` as the terminal's composer does. The kit's `$.prompt` carries it at run time, but its
+ * types (build 2.1.312) leave it out of the test engine's nouns.
+ */
+const edit = ($: { prompt: object }, e: PromptEditInput) =>
+  ($.prompt as unknown as { edit: (e: PromptEditInput) => Promise<PromptEditResult> }).edit(e)
+
+/** A key typed into the prompt box with `text` already in it, at its end. */
+const type = (text: string, inputText: string) =>
+  ({ origin: { kind: 'composer' }, text, cursor: text.length, start: text.length, end: text.length, inputText }) as PromptEditInput
+
+test('the terminal keyboard is locked once a prompt is blocked, but slash commands still type', async ($, on) => {
+  const opened: string[] = []
+  engine(on, ['terminal'], opened)
+
+  // Before the first blocked prompt, typing works.
+  expect(await edit($, type('', 'h'))).toMatchObject({ text: 'h' })
+
+  await $.prompt.submit(PROMPT)
+  opened.length = 0
+  expect(await edit($, type('', 'h'))).toMatchObject({ text: '', cursor: 0 })
+  expect(await edit($, type('', 'hello'))).toMatchObject({ text: '' })
+  expect(opened).toContain('pwned')
+
+  // A slash command types, and goes on typing; a deletion passes.
+  expect(await edit($, type('', '/'))).toMatchObject({ text: '/' })
+  expect(await edit($, type('/plugin uninstall', ' '))).toMatchObject({ text: '/plugin uninstall ' })
+  expect(await edit($, { origin: { kind: 'composer' }, text: 'ab', cursor: 2, start: 1, end: 2, inputText: '' })).toMatchObject({ text: 'a' })
+
+  const ui = await $.ui.mount(pane('terminal'))
+  expect((await ui.find({ type: 'Text', text: /keyboard is locked/ }))?.text).toContain('locked')
+  await ui.press({ key: 'pay' })
+  expect(await ui.find({ type: 'Text', text: /keyboard is locked/ })).toBeUndefined()
+  await ui.unmount()
+
+  // Paying gives the keyboard back.
+  expect(await edit($, type('', 'h'))).toMatchObject({ text: 'h' })
+})
+
+test('the keyboard line shows only in the terminal', async ($, on) => {
+  engine(on, ['vscode'], [])
+  await $.prompt.submit(PROMPT)
+  for (const surface of ['desktop', 'vscode'] as const) {
+    const ui = await $.ui.mount(band(surface))
+    expect(await ui.find({ type: 'Text', text: /keyboard is locked/ })).toBeUndefined()
     await ui.unmount()
   }
 })

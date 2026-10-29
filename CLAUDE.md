@@ -28,6 +28,11 @@ The mod has no settings, by request. Its tests are in `plugins/security-advisor/
 - **Desktop and mobile:** the band above the prompt, with the animated SVG (`pwnedSvg`).
 - **VS Code:** the band above the prompt, with the pixel art as rows of coloured `Box` runs (`pwnedRaster` and `spans`). Never an `Svg` (see the gotcha below).
 - **Terminal:** a pane with the full screen and the band with a compact strip, both in half-block cells (`pwnedRaster` and `halfBlocks`). The mod opens the pane only when `$.session.surfaces()` has `terminal`.
+- **Keyboard lock (terminal only):** after the first blocked prompt, a `prompt.edit` hook drops each key that adds text, and opens the pane again with `focus: true` to take the keys back. A draft that starts with `/` still types. "Pay ransom" ends the lock.
+
+### No surface lets a plugin disable the prompt box
+
+The plugin API has no call to disable or hide the prompt input. Only the terminal raises `prompt.edit` (the VS Code bundle has no reference to it). In VS Code, `$.ui.focus` cannot take the keyboard from the prompt (it refuses a site that does not hold the keys), and the webview drops `Input` `autoFocus`. The test types (build 2.1.312) do not have `$.prompt.edit`, but the kit raises it at run time: the tests use a small cast helper.
 
 ## Gotchas
 

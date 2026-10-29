@@ -22,6 +22,11 @@ const PX_W = 0.6
 const PX_H = 0.27
 /** The widest raster drawn, in pixels (terminal cells or VS Code `ch`). */
 const MAX_ART_W = 110
+/**
+ * The terminal puts a dropped prompt's text back in the box. This long after the drop, the mod empties the box, so
+ * that the pane can take the keys: a pane takes them only over an empty prompt.
+ */
+const CLEAR_MS = 100
 /** The terminal band draws its strip only with this many rows to spare; the pane always has the full screen. */
 const BAND_ART_ROWS = 18
 
@@ -47,16 +52,31 @@ function animate($: EngineInterface): void {
   })
 }
 
+/** Opens the pane, or asks for the keys again if it is open; the surface grants them only over an empty prompt. */
+function takeKeys($: EngineInterface): Promise<unknown> {
+  return $.ui.open({ id: PANE, title: PANE_TITLE, rows: PANE_ROWS, columns: 200, focus: true })
+}
+
+async function emptyPromptAndTakeKeys($: EngineInterface): Promise<void> {
+  try {
+    await $.prompt.fill({ text: '' })
+    await takeKeys($)
+  } catch (err) {
+    $.ui.log(`emptying the prompt failed: ${String(err)}`, { to: 'debug' })
+  }
+}
+
 async function showScreen($: EngineInterface): Promise<void> {
   await update($, paidAtom, () => false)
   await update($, pwnedAtom, () => true)
-  // The band is small in a terminal, so the terminal also gets the full screen in a pane.
+  // The band is small in a terminal, so the terminal also gets the full screen in a pane, which then holds the keys.
   if ((await $.session.surfaces()).includes('terminal')) {
     try {
-      await $.ui.open({ id: PANE, title: PANE_TITLE, rows: PANE_ROWS, columns: 200, focus: true })
+      await takeKeys($)
     } catch (err) {
       $.ui.log(`opening the pane failed: ${String(err)}`, { to: 'debug' })
     }
+    $.clock.after(CLEAR_MS, () => void emptyPromptAndTakeKeys($))
   }
   animate($)
 }
@@ -86,15 +106,15 @@ export const register: Register = on => {
   }).catch(($, e, next) => (next.called ? { text: e.text } : { drop: BLOCKED }))
 
   // The keyboard lock, terminal only (no other surface raises prompt.edit, and no surface lets a plugin disable the
-  // prompt box): once a prompt was blocked, and until "pay ransom", a key that adds text is dropped and the pane
+  // prompt box): once a prompt was blocked, and until "pay ransom", a key that adds text empties the box and the pane
   // takes the keys back. A draft that starts with "/" still types, so /plugin uninstall gets everyone out;
   // deletions and cursor moves add nothing and pass.
   on('prompt.edit', async ($, e, next) => {
     if (!(await read($, pwnedAtom)) || (await read($, paidAtom))) return next(e)
     const after = e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end)
     if (e.inputText === '' || after.startsWith('/')) return next(e)
-    void $.ui.open({ id: PANE, title: PANE_TITLE, rows: PANE_ROWS, columns: 200, focus: true }).catch(() => undefined)
-    return { text: e.text, cursor: e.cursor }
+    void takeKeys($).catch(() => undefined)
+    return { text: '', cursor: 0 }
   }).catch(($, e, next) => (next.called ? { text: e.text, cursor: e.cursor } : next(e)))
 
   /**
@@ -117,7 +137,8 @@ export const register: Register = on => {
     const isTight = e.surface === 'vscode' && isBand
 
     const pay = (
-      <Button key="pay" variant="primary" hotkey="p" onPress={() => void update($, paidAtom, () => true)}>
+      // No hotkey: while the pane holds the keys, a typed "p" would pay by accident.
+      <Button key="pay" variant="primary" onPress={() => void update($, paidAtom, () => true)}>
         💰 {PAY}
       </Button>
     )
@@ -226,7 +247,7 @@ export const register: Register = on => {
         {art}
         {messages}
         {isPane ? (
-          <Box marginTop={1}>{paid ? lesson : <Text color="#8a93a6">(press p, or click the button, to pay)</Text>}</Box>
+          <Box marginTop={1}>{paid ? lesson : <Text color="#8a93a6">(click the button, or Tab to it and press Enter, to pay)</Text>}</Box>
         ) : null}
       </Box>
     )

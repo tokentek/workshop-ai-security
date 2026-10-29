@@ -28,7 +28,24 @@ The mod has no settings, by request. Its tests are in `plugins/security-advisor/
 - **Desktop and mobile:** the band above the prompt, with the animated SVG (`pwnedSvg`).
 - **VS Code:** the band above the prompt, with the pixel art as rows of coloured `Box` runs (`pwnedRaster` and `spans`). Never an `Svg` (see the gotcha below).
 - **Terminal:** a pane with the full screen and the band with a compact strip, both in half-block cells (`pwnedRaster` and `halfBlocks`). The mod opens the pane only when `$.session.surfaces()` has `terminal`.
-- **Keyboard lock (terminal only):** after the first blocked prompt, a `prompt.edit` hook drops each key that adds text, and opens the pane again with `focus: true` to take the keys back. A draft that starts with `/` still types. "Pay ransom" ends the lock.
+- **Keyboard lock (terminal only):** after the first blocked prompt, a `prompt.edit` hook empties the box on each key that adds text, and opens the pane again with `focus: true` to ask for the keys. A draft that starts with `/` still types. "Pay ransom" ends the lock. The pay button has no hotkey, so that a typed "p" in the pane does not pay.
+
+### The terminal puts a dropped prompt back in the box
+
+After a `prompt.submit` hook answers `{ drop }`, the terminal keeps the dropped text in the prompt box. The mod empties the box with `$.prompt.fill({ text: '' })` 100 ms after the drop. Without this, slash commands cannot start with `/`, and a pane never gets the keys (a pane takes them only over an empty prompt).
+
+### The terminal applies a key before `prompt.edit` answers
+
+The editor shows each key at once and raises `prompt.edit` in the background, with a 50 ms budget. It applies the hook's answer only if the answer still fits the draft; otherwise it logs "a rewrite no longer fits the draft (it moved meanwhile); the person's typing stands". Keep the `prompt.edit` hook fast.
+
+### Test the keyboard lock in the real CLI
+
+`claude plugin test` cannot show what the editor does with an answer. To test in the real CLI:
+
+1. Write an `expect` script that runs `claude --debug-file <log> --plugin-dir plugins/security-advisor --settings <file>`. In the settings file, put `{"enabledPlugins":{"security-advisor@ai-security-workshop":false}}` so that the installed copy does not load too.
+2. Run it in a scratch folder. The first run shows the workspace trust question: send the down arrow and Enter.
+3. Send keys one at a time with a short `sleep`: a prompt and Enter, some letters, Esc, then `/exit` and Enter.
+4. Read the log (`prompt.edit`, `prompt.fill`, `typing stands`) and strip the escape codes from the output to see the prompt line.
 
 ### No surface lets a plugin disable the prompt box
 

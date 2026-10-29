@@ -34,7 +34,7 @@ function nodes(tree: unknown): Node[] {
 }
 
 /** The answers the engine gives beneath the plugin, for a session drawn on `surfaces`. */
-function engine(on: On, surfaces: Surface[], opened: string[]) {
+function engine(on: On, surfaces: Surface[], opened: string[], filled: string[] = []) {
   // The animation timer waits on a clock that moves only when a test advances it.
   const clock = mock.clock(on)
   on('session.surfaces', () => ({ value: surfaces }))
@@ -43,6 +43,10 @@ function engine(on: On, surfaces: Surface[], opened: string[]) {
     return { value: { isPlaced: true } }
   })
   on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true }
+  })
   on('prompt.edit', (_, e) => ({ text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end), cursor: e.start + e.inputText.length }))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -124,7 +128,9 @@ test('the terminal pane draws the full screen in half blocks, with space before 
   const messages = all.find(n => n.props?.key === 'messages')
   expect(messages?.props?.marginTop).toBe(1)
   expect(messages?.props?.gap).toBe(1)
-  expect(await ui.find({ type: 'Text', text: /press p/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Tab to it/ })).toBeDefined()
+  // No hotkey: while the pane holds the keys, a typed "p" must not pay.
+  expect((await ui.find({ type: 'Button', key: 'pay' }))?.props.hotkey).toBeUndefined()
   await ui.unmount()
 })
 
@@ -189,6 +195,8 @@ test('the terminal keyboard is locked once a prompt is blocked, but slash comman
   opened.length = 0
   expect(await edit($, type('', 'h'))).toMatchObject({ text: '', cursor: 0 })
   expect(await edit($, type('', 'hello'))).toMatchObject({ text: '' })
+  // A key over text left in the box empties it, so that the pane can take the keys.
+  expect(await edit($, type('hello', 'x'))).toMatchObject({ text: '', cursor: 0 })
   expect(opened).toContain('pwned')
 
   // A slash command types, and goes on typing; a deletion passes.
@@ -204,6 +212,26 @@ test('the terminal keyboard is locked once a prompt is blocked, but slash comman
 
   // Paying gives the keyboard back.
   expect(await edit($, type('', 'h'))).toMatchObject({ text: 'h' })
+})
+
+test('after the drop, the terminal empties the prompt box and the pane asks for the keys', async ($, on) => {
+  const opened: string[] = []
+  const filled: string[] = []
+  const clock = engine(on, ['terminal'], opened, filled)
+  await $.prompt.submit(PROMPT)
+  expect(filled).toEqual([])
+  opened.length = 0
+  await clock.advance(100)
+  expect(filled).toEqual([''])
+  expect(opened).toEqual(['pwned'])
+})
+
+test('desktop and VS Code keep the prompt box as it is', async ($, on) => {
+  const filled: string[] = []
+  const clock = engine(on, ['vscode', 'desktop'], [], filled)
+  await $.prompt.submit(PROMPT)
+  await clock.advance(1000)
+  expect(filled).toEqual([])
 })
 
 test('the keyboard line shows only in the terminal', async ($, on) => {

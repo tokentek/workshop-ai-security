@@ -16,16 +16,30 @@ Keep the disguise:
 
 1. Bump the version in `plugins/security-advisor/.claude-plugin/plugin.json`.
 2. Run `claude plugin validate .` and `claude plugin validate plugins/security-advisor`.
+3. Run `claude plugin test plugins/security-advisor`. All tests must pass.
+4. Do a visual check of each surface that the change touches (see "Visual check of the pixel art" below).
 
 `marketplace.json` has no version field. Do not change it for a version bump.
 
-The mod has no tests and no settings, by request. A temporary test for a check is permitted. Remove it after the check.
+The mod has no settings, by request. Its tests are in `plugins/security-advisor/tests/screen.test.tsx`. A temporary test for a check (for example a tree dump) is permitted. Remove it after the check.
+
+## What each surface draws
+
+- **Desktop and mobile:** the band above the prompt, with the animated SVG (`pwnedSvg`).
+- **VS Code:** the band above the prompt, with the pixel art as rows of coloured `Box` runs (`pwnedRaster` and `spans`). Never an `Svg` (see the gotcha below).
+- **Terminal:** a pane with the full screen and the band with a compact strip, both in half-block cells (`pwnedRaster` and `halfBlocks`). The mod opens the pane only when `$.session.surfaces()` has `terminal`.
 
 ## Gotchas
 
 ### The API types are not always correct about surfaces
 
-The comments in the plugin API types can be out of date. For example, build 2.1.310 says that `AbovePrompt` is "Raised on the terminal and desktop surfaces only". That is not true: the VS Code extension raises `AbovePrompt` under the surface name `"vscode"`, and it draws `Svg` (as an image, because it does not use `isInteractive`).
+The comments in the plugin API types can be out of date. For example, build 2.1.310 says that `AbovePrompt` is "Raised on the terminal and desktop surfaces only". That is not true: the VS Code extension raises `AbovePrompt` under the surface name `"vscode"`.
+
+### VS Code does not draw `Svg`: it shows only the alt text
+
+The `vscode` element table has `Svg`, but the webview (build 2.1.312) draws the picture in a sandboxed `srcdoc` iframe. Before it draws, it checks that the iframe runs in a different process (a busy-loop handshake, `spinTicks`). In the VS Code webview the iframe runs in the same process, so the check fails, the picture is refused (`late`, then `blind`), and the webview shows the `alt` text. The content of the SVG has no effect on this. In Chrome, which isolates sandboxed iframes, the same code draws the SVG.
+
+Also, a `Markdown` image shows only its alt text, and `Text` `size` has no effect in VS Code. A `Box` takes fractional `width` (in `ch`) and `height` (in `lh`) and a `backgroundColor`, so the mod draws its pixels as boxes. The band in VS Code is at most `12lh` tall and scrolls what is taller.
 
 When the types and the behaviour that the user sees do not agree, search the installed host bundle:
 
@@ -40,7 +54,7 @@ In `claude plugin test`, `$.ui.mount({ surface, component })` raises any compone
 
 - For a change that applies to one surface, make sure that the real host raises the component (see the gotcha above).
 - An assertion such as "the terminal draws 0 `Svg`" can never fail, because the terminal has no `Svg` element. Do not use it as proof.
-- A test of the pane must answer `clock.every` (for example `on('clock.every', () => ({ value: undefined }))`), because the terminal animation uses a timer.
+- A test that blocks a prompt must call `mock.clock(on)`, because the animation starts a timer. A stub such as `on('clock.every', () => ({ value: undefined }))` lets the real timer run, and its late `$.state.set` fails the test file ("a rejection nothing handled"). With `mock.clock`, `await clock.advance(250)` moves the animation one frame.
 
 ### `tsc -p plugins/security-advisor` fails on a fresh checkout
 
@@ -49,7 +63,7 @@ The mod's `tsconfig.json` extends `./.claude-plugin/types/tsconfig.json`. That f
 To type-check without it, write a scratch `tsconfig.json` outside the repo:
 
 - Copy the `compilerOptions` from the header of the bundled `claude-code.d.ts` (in the `plugin-authoring` skill's `types/` folder).
-- In `include`, put the path of that `.d.ts` and the absolute paths of the mod's `hooks` and `types` folders.
+- In `include`, put the path of that `.d.ts` and the absolute paths of the mod's `hooks`, `types` and `tests` folders.
 - Run `npx -y -p typescript@5.6.3 tsc -p <scratch tsconfig>`.
 
 ### Visual check of the pixel art without the live host
@@ -67,6 +81,8 @@ To see the full pane tree for a surface:
 1. Add a temporary test that mounts the pane and prints `console.log('@@DUMP <name> ' + JSON.stringify(await ui.drawn()))`.
 2. Run `claude plugin test plugins/security-advisor | grep @@DUMP > dump.txt`. Then remove the temporary test.
 3. Use a small Node script to render the trees as HTML: `Box` as a flex `div`, `Text` as a `span`, `Svg` as an `<img>` with a base64 `data:image/svg+xml` source.
+   - For VS Code, map `Box` sizes as the webview does: `width` in `ch`, `height` in `lh`, `gap` as `lh` down and `ch` across. Put the tree in a `div` with `max-height:12lh; overflow:auto`, in a 13px `system-ui` font.
+   - For the terminal, use a monospace font, and draw each `▀`/`▄` as a cell with a two-colour `linear-gradient` background (top colour 50%, bottom colour 50%).
 4. Take a screenshot with headless Chrome:
    `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --window-size=820,1000 --screenshot=out.png file://<path>.html`
 

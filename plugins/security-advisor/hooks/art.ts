@@ -391,27 +391,166 @@ export function pwnedSvg(): string {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The terminal frames.
+// The same screen as a raster, for the surfaces that draw no `Svg`. The terminal draws it as half-block cells, two
+// pixels to a cell. VS Code draws it as rows of coloured boxes: its webview never draws an `Svg` here, because the
+// frame it paints pictures in shares the page's process. One raster per tick: the jaw, the eyes, the fire, the
+// tape and the middle warning step with `frame`.
 
-export const SKULL_ASCII: readonly (readonly string[])[] = [
-  ['   _____   ', '  /     \\  ', ' | () () | ', '  \\  ^  /  ', '   |||||   ', '   |||||   '],
-  ['   _____   ', '  /     \\  ', ' | @   @ | ', '  \\  ^  /  ', '   |||||   ', "   '''''   "],
-]
+/** Rows of colours, '' where nothing is drawn. */
+export type Raster = string[][]
 
-export const BANNER = [
-  '██████╗ ██╗    ██╗███╗   ██╗███████╗██████╗ ██╗',
-  '██╔══██╗██║    ██║████╗  ██║██╔════╝██╔══██╗██║',
-  '██████╔╝██║ █╗ ██║██╔██╗ ██║█████╗  ██║  ██║██║',
-  '██╔═══╝ ██║███╗██║██║╚██╗██║██╔══╝  ██║  ██║╚═╝',
-  '██║     ╚███╔███╔╝██║ ╚████║███████╗██████╔╝██╗',
-  '╚═╝      ╚══╝╚══╝ ╚═╝  ╚═══╝╚══════╝╚═════╝ ╚═╝',
-]
-
-export const BANNER_W = BANNER[0]!.length
-
-/** A strip of hazard tape `width` cells wide, shifted by the frame so it crawls. */
-export function tapeAscii(width: number, frame: number): string {
-  const unit = '▚▚▚▚    '
-  const shift = frame % unit.length
-  return unit.repeat(Math.ceil(width / unit.length) + 1).slice(shift, shift + width)
+/** Cuts the empty ('.') rows and columns around a pixel map. */
+function trim(rows: readonly string[]): string[] {
+  const ys = rows.flatMap((r, y) => (/[^.]/.test(r) ? [y] : []))
+  const xs = Array.from({ length: rows[0]?.length ?? 0 }, (_, x) => x).filter(x => rows.some(r => r.charAt(x) !== '.'))
+  if (ys.length === 0 || xs.length === 0) return []
+  return rows.slice(ys[0], ys.at(-1)! + 1).map(r => r.slice(xs[0], xs.at(-1)! + 1))
 }
+
+const widthOf = (rows: readonly string[]): number => rows[0]?.length ?? 0
+
+function blit(r: Raster, rows: readonly string[], pal: Pal, ox: number, oy: number): void {
+  rows.forEach((row, y) => {
+    const line = r[oy + y]
+    if (line === undefined) return
+    ;[...row].forEach((ch, x) => {
+      const color = pal[ch]
+      if (color !== undefined && ox + x >= 0 && ox + x < line.length) line[ox + x] = color
+    })
+  })
+}
+
+// At one pixel per font pixel a bevel would leave no fill, so the raster letters keep their bands and outline.
+const R_FIRE = trim(shadow(outline(pad(bands(pad(textMask('PWNED!', 1, BOLD)), 1, 9, 9), 2)), 1))
+const R_CHROME = trim(shadow(outline(pad(bands(pad(textMask("YOU'VE BEEN", 1)), 1, 7, 2), 2)), 1))
+const R_SKULL = [skullSprite(SKULL_CLOSED), skullSprite(SKULL_OPEN)] as const
+const R_WARNING = outline(pad(bevel(WARNING, { mid: true })))
+const R_PADLOCK = outline(pad(bevel(PADLOCK, { mid: true })))
+
+// A 10×10 skull for the compact strip, 12×12 with its outline.
+const MINI_TOP = ['..######..', '.########.', '##########', '#KKK##KKK#', '#KKK##KKK#', '####KK####', '.########.', '..#K##K#..']
+const R_MINI = [
+  outline(pad(bevel([...MINI_TOP, '..######..', '..........'], { hole: 'K' }))),
+  outline(pad(bevel([...MINI_TOP, '..KKKKKK..', '..######..'], { hole: 'K' }))),
+] as const
+
+const EYES = ['#ff2d2d', '#ff9500', '#ffd60a', '#ff9500']
+
+function rasterTape(r: Raster, y: number, height: number, shift: number): void {
+  for (let row = 0; row < height; row++) {
+    const line = r[y + row]
+    if (line === undefined) continue
+    for (let x = 0; x < line.length; x++) line[x] = (((x + row + shift) % 8) + 8) % 8 < 4 ? '#1c1c24' : '#ffd60a'
+  }
+}
+
+/**
+ * The PWNED screen, `width` pixels wide, at animation step `frame`. `compact` is the strip for the band above the
+ * prompt (18 px tall: tape, mini skulls, the fire word); otherwise the full screen (46 px tall).
+ */
+export function pwnedRaster(frame: number, width: number, compact: boolean): Raster {
+  const fire = R_FIRE
+  const fireW = widthOf(fire)
+  const isOpen = Math.floor(frame / 2) % 2 === 1
+  const firePal: Pal = { ...FIRE_PAL, ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [String(i), FIRE[(i + frame) % FIRE.length]!])) }
+  const cx = Math.floor(width / 2)
+
+  const tape = 2
+  const height = compact ? 18 : 46
+  const r: Raster = Array.from({ length: height }, (_, y) => Array<string>(width).fill(SKY[Math.min(SKY.length - 1, Math.floor((y * SKY.length) / height))]!))
+  rasterTape(r, 0, tape, frame)
+  rasterTape(r, height - tape, tape, -frame)
+
+  const eyes = (sx: number, sy: number, at: readonly (readonly [number, number])[]) =>
+    at.forEach(([x, y]) => {
+      const line = r[sy + y]
+      if (line !== undefined && sx + x >= 0 && sx + x < width) line[sx + x] = EYES[frame % EYES.length]!
+    })
+
+  if (compact) {
+    const fireY = tape + 2
+    blit(r, fire, firePal, cx - Math.floor(fireW / 2), fireY)
+    if (width >= fireW + 2 * (12 + 6)) {
+      const skullY = fireY
+      const mini = R_MINI[isOpen ? 1 : 0]
+      for (const sx of [cx - Math.floor(fireW / 2) - 6 - 12, cx + Math.ceil(fireW / 2) + 6]) {
+        blit(r, mini, BONE, sx, skullY)
+        eyes(sx, skullY, [[3, 5], [8, 5]])
+      }
+    }
+    return r
+  }
+
+  const chrome = R_CHROME
+  const chromeY = tape + 2
+  const fireY = chromeY + chrome.length + 1
+  blit(r, chrome, CHROME, cx - Math.floor(widthOf(chrome) / 2), chromeY)
+  blit(r, fire, firePal, cx - Math.floor(fireW / 2), fireY)
+
+  if (width >= fireW + 2 * (22 + 8)) {
+    const skull = R_SKULL[isOpen ? 1 : 0]
+    const skullY = tape + 3 - (isOpen ? 1 : 0)
+    for (const sx of [cx - Math.floor(fireW / 2) - 8 - 22, cx + Math.ceil(fireW / 2) + 8]) {
+      blit(r, skull, BONE, sx, skullY)
+      eyes(sx, skullY, [[5, 10], [6, 10], [5, 11], [6, 11], [15, 10], [16, 10], [15, 11], [16, 11]])
+    }
+  }
+
+  // Warnings and padlocks under the word; the middle warning blinks.
+  const icons = width >= 92 ? ['w', 'l', 'b', 'l', 'w'] : ['l', 'b', 'l']
+  const iconW = (k: string) => widthOf(k === 'l' ? R_PADLOCK : R_WARNING)
+  const gap = 4
+  let x = cx - Math.floor((icons.reduce((w, k) => w + iconW(k), 0) + gap * (icons.length - 1)) / 2)
+  const iconY = height - tape - 1 - R_WARNING.length
+  for (const k of icons) {
+    if (k === 'l') blit(r, R_PADLOCK, PADLOCK_PAL, x, iconY - 1)
+    else if (k === 'w' || frame % 2 === 0) blit(r, R_WARNING, WARNING_PAL, x, iconY)
+    x += iconW(k) + gap
+  }
+  return r
+}
+
+/** A run of terminal cells of one look: '▀' draws the upper pixel in `fg` over the lower one in `bg`. */
+export type Cell = { text: string; fg?: string; bg?: string }
+
+/** The raster as terminal rows, two pixel rows to a cell row, runs of one look merged. */
+export function halfBlocks(r: Raster): Cell[][] {
+  const out: Cell[][] = []
+  for (let y = 0; y < r.length; y += 2) {
+    const top = r[y]!
+    const bottom = r[y + 1]
+    const row: Cell[] = []
+    top.forEach((t, x) => {
+      const b = bottom?.[x] ?? ''
+      const cell: Cell =
+        t === b
+          ? t === ''
+            ? { text: ' ' }
+            : { text: ' ', bg: t }
+          : t === ''
+            ? { text: '▄', fg: b }
+            : b === ''
+              ? { text: '▀', fg: t }
+              : { text: '▀', fg: t, bg: b }
+      const last = row.at(-1)
+      if (last !== undefined && last.fg === cell.fg && last.bg === cell.bg && last.text.charAt(0) === cell.text) last.text += cell.text
+      else row.push(cell)
+    })
+    out.push(row)
+  }
+  return out
+}
+
+/** A run of `n` pixels of one colour. */
+export type Span = { n: number; color: string }
+
+/** The raster as rows of runs of one colour, for a surface that draws coloured boxes. */
+export const spans = (r: Raster): Span[][] =>
+  r.map(row =>
+    row.reduce<Span[]>((acc, color) => {
+      const last = acc.at(-1)
+      if (last !== undefined && last.color === color) last.n++
+      else acc.push({ n: 1, color })
+      return acc
+    }, []),
+  )

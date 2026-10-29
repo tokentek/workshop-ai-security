@@ -17,6 +17,14 @@ security-advisor works in the Claude Code CLI, Claude Code Desktop and the Claud
 
 ## Install
 
+### Full install of marketplace and plugin
+1. Install directly from terminal
+   ````
+   claude plugin install security-advisor --marketplace tokentek/workshop-ai-security
+   ````
+
+### OR Install marketplace and plugin
+
 1. Add the marketplace:
 
    ```

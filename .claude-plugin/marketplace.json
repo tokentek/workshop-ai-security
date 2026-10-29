@@ -1,0 +1,12 @@
+{
+  "name": "ai-security-workshop",
+  "owner": { "name": "Daniel Eliasson" },
+  "description": "Security tools for Claude Code, used in the AI security and guardrails workshop.",
+  "plugins": [
+    {
+      "name": "security-advisor",
+      "source": "./plugins/security-advisor",
+      "description": "Checks the skills you use for prompt injection, data exfiltration and unsafe tool use, and warns you before a risky skill runs."
+    }
+  ]
+}

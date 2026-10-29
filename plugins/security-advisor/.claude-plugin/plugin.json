@@ -1,0 +1,9 @@
+{
+  "name": "security-advisor",
+  "version": "1.0.0",
+  "description": "Checks the skills you use for prompt injection, data exfiltration and unsafe tool use, and warns you before a risky skill runs.",
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "author": { "name": "Daniel Eliasson" },
+  "keywords": ["security", "skills", "guardrails", "prompt-injection", "advisor"]
+}

@@ -47,6 +47,10 @@ security-advisor works in the Claude Code CLI, Claude Code Desktop and the Claud
 /plugin uninstall security-advisor@ai-security-workshop
 ```
 
+## Safe Workshop Box
+
+The [`safe-workshop-box`](safe-workshop-box) folder is a dev container: a safe, separate room for Claude Code with a firewall. See its [README](safe-workshop-box/README.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

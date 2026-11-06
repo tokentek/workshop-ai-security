@@ -4,14 +4,15 @@
 # Azure DevOps access for an agent sandbox:
 #   - the Azure CLI with the azure-devops extension (`az repos`, `az boards`, ...),
 #   - git over HTTPS to dev.azure.com,
-#   - the user's Personal Access Token (PAT), injected by the sandbox proxy.
+#   - the user's Microsoft Entra ID access token, injected by the sandbox proxy.
 #
-# The PAT never enters the sandbox. AZURE_DEVOPS_EXT_PAT holds a sentinel, and
-# the proxy sets "Authorization: Basic base64(pat:<PAT>)" on each request to the
-# Azure DevOps hosts below. Azure DevOps accepts any user name with a PAT.
+# The token never enters the sandbox. AZURE_DEVOPS_EXT_PAT holds a sentinel, and
+# the proxy sets "Authorization: Bearer <token>" on each request to the Azure
+# DevOps hosts below. The host gets the token from its own `az login`
+# (sbxenv.local.yaml), so no Personal Access Token (PAT) is necessary.
 schemaVersion: "3"
 displayName: Azure DevOps
-description: Azure CLI with the azure-devops extension, git over HTTPS, and a proxy-managed PAT
+description: Azure CLI with the azure-devops extension, git over HTTPS, and a proxy-managed Entra ID token
 sourceUrl: https://learn.microsoft.com/azure/devops/cli/
 licenses: [MIT]
 
@@ -61,26 +62,27 @@ capabilities:
           - azcliextensionsync.blob.core.windows.net
         deny:
           # The agent may change code, work items and pipelines, but it may
-          # not delete repositories or projects with the injected PAT.
+          # not delete repositories or projects with the injected token.
           - hosts: [dev.azure.com]
             methods: [DELETE]
             paths: ["/*/_apis/git/repositories/**", "/*/_apis/projects/**", "/*/*/_apis/git/repositories/**"]
 
   - type: com.docker.sandbox/credential@1
-    description: Azure DevOps Personal Access Token (PAT)
+    description: Azure DevOps access token (Entra ID, from the host's az login)
     optional: true
     config:
       service: azure-devops
       phase: runtime
       apiKey:
-        # The Azure CLI devops extension reads the PAT from this variable.
-        # In the sandbox it holds a sentinel, never the real PAT.
+        # The Azure CLI devops extension needs a value in this variable to
+        # start. In the sandbox it holds a sentinel, never the real token.
+        # The proxy replaces the Authorization header that az sends.
         name: AZURE_DEVOPS_EXT_PAT
         proxyManaged: true
         inject:
-          - {domain: dev.azure.com, scheme: basic, username: pat}
-          - {domain: "*.dev.azure.com", scheme: basic, username: pat}
-          - {domain: "*.visualstudio.com", scheme: basic, username: pat}
+          - {domain: dev.azure.com, header: Authorization, format: "Bearer %s"}
+          - {domain: "*.dev.azure.com", header: Authorization, format: "Bearer %s"}
+          - {domain: "*.visualstudio.com", header: Authorization, format: "Bearer %s"}
 
   - type: com.docker.sandbox/lifecycle@1
     config:
@@ -116,7 +118,7 @@ capabilities:
         - command: |
             set -e
             # git sends the request without credentials and the proxy adds
-            # the PAT. Never ask for a password in a headless session.
+            # the token. Never ask for a password in a headless session.
             git config --global credential.https://dev.azure.com.useHttpPath true
             git config --global core.askPass ""
           user: agent
@@ -131,7 +133,7 @@ capabilities:
         - `az` (Azure CLI) with the `azure-devops` extension is installed. Use
           `az repos`, `az repos pr`, `az boards`, `az pipelines` for Azure DevOps.
         - Authentication is proxy-managed. `AZURE_DEVOPS_EXT_PAT` holds a sentinel,
-          and the sandbox proxy adds the real Personal Access Token on requests to
+          and the sandbox proxy adds the real access token on requests to
           `dev.azure.com`, `*.dev.azure.com` and `*.visualstudio.com`.
           Do not run `az login` or `az devops login`. Do not print the token.
         - Clone with HTTPS, not SSH: `git clone https://dev.azure.com/<org>/<project>/_git/<repo>`.

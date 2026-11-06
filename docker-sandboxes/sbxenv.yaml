@@ -47,7 +47,7 @@ kits:
       model: "${{ env.args.codexModel }}"
   # GitHub CLI, with the GitHub egress and credential.
   - docker.io/docker/sbx-kit-gh:2.103.2
-  # Azure CLI + azure-devops extension, git over HTTPS, the PAT credential.
+  # Azure CLI + azure-devops extension, git over HTTPS, the Entra ID token credential.
   - source: ./kits/azure-devops
     args:
       organization: "${{ env.args.azdoOrg }}"

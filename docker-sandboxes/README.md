@@ -11,7 +11,7 @@ This folder gives a Docker Sandbox for autonomous coding agents. The sandbox is 
 | Claude Code (workload) | `docker.io/docker/sbx-kit-claude:2.1.316` | `claude` in bypass-permissions mode, Anthropic egress and credential |
 | Codex | `docker.io/docker/sbx-kit-codex-mixin:0.166.0` | `codex` with `approval_policy = "never"`, OpenAI egress and credential |
 | GitHub CLI | `docker.io/docker/sbx-kit-gh:2.103.2` | `gh`, GitHub egress, `GH_TOKEN` sentinel. Repository deletes are blocked. |
-| Azure DevOps | `kits/azure-devops` (local) | `az` with the `azure-devops` extension, git over HTTPS, the PAT as Basic auth. Repository and project deletes are blocked. |
+| Azure DevOps | `kits/azure-devops` (local) | `az` with the `azure-devops` extension, git over HTTPS, your Entra ID token as Bearer auth. Repository and project deletes are blocked. |
 | Agent workbench | `kits/agent-workbench` (local) | Your Git identity, read-only egress to package registries, working rules for the agents |
 
 The Docker kit images are the official v3 kits. The two local kits follow the [kit v3 specification](https://github.com/docker/sandbox-kit-spec/blob/main/docs/spec/SPEC-v3.md).
@@ -19,12 +19,14 @@ The Docker kit images are the official v3 kits. The two local kits follow the [k
 The environment files:
 
 - `sbxenv.yaml`: the common base (agent, kits, size, GitHub binding).
-- `sbxenv.local.yaml`: a local sandbox. It mounts your project folder and provisions the Azure DevOps PAT.
+- `sbxenv.local.yaml`: a local sandbox. It mounts your project folder and provisions the Azure DevOps token from your `az login`.
 - `sbxenv.cloud.yaml`: a Docker cloud sandbox. It has no host folder.
 
 `bin/agents` is a small wrapper. It gives the files, your project folder and a fixed sandbox name to `sbx env`.
 
 ## One-time setup
+
+This setup uses your own sign-ins. It does not need an API key or a Personal Access Token (PAT).
 
 1. Sign in to Docker:
 
@@ -32,36 +34,34 @@ The environment files:
    sbx login
    ```
 
-2. Store the model credentials as global secrets. Do one or both:
+2. Sign in to Azure on the host. The sandbox proxy gets a short-lived Azure DevOps token from this sign-in:
 
    ```sh
-   sbx secret set anthropic        # Anthropic API key (prompts for the value)
-   sbx secret set openai --oauth   # ChatGPT sign-in for Codex (or: sbx secret set openai for an API key)
+   az login
    ```
 
-   Without an Anthropic secret, Claude Code asks you to run `/login` in the sandbox.
-
-3. Store a GitHub token as a global secret:
+3. Install the GitHub CLI on the host and sign in with the browser (OAuth):
 
    ```sh
-   sbx secret set github           # prompts for a fine-grained token
+   brew install gh
+   gh auth login --web
    ```
 
-4. Make a Personal Access Token (PAT) in Azure DevOps (User settings > Personal access tokens). Give it only the scopes that the agents need, for example Code (Read & write), Work Items (Read & write) and Build (Read & execute).
-
-5. Store the PAT in the macOS Keychain. The command asks for the PAT, so the value is not in your shell history:
+4. Tell `sbx` to read the GitHub token from `gh` when it needs it:
 
    ```sh
-   security add-generic-password -a "$USER" -s sbx-azure-devops-pat -w
+   sbx secret set github --command '/opt/homebrew/bin/gh auth token'
    ```
 
-   To replace the PAT later, add `-U` to the same command.
-
-6. Put the wrapper on your `PATH`, for example:
+5. Put the wrapper on your `PATH`, for example:
 
    ```sh
-   ln -s "$PWD/bin/agents" /usr/local/bin/agents
+   mkdir -p ~/.local/bin && ln -sf "$PWD/bin/agents" ~/.local/bin/agents
    ```
+
+You sign in to Claude in the sandbox (see "Sign in to Claude" below). Optional: `sbx secret set openai --oauth` uses your ChatGPT sign-in for Codex.
+
+Alternatives: `sbx secret set anthropic` stores an Anthropic API key, and `sbx secret set github` stores a GitHub token.
 
 ## Start the sandbox
 
@@ -73,12 +73,23 @@ agents claude      # create the sandbox (first time) and attach to Claude Code
 agents codex       # run Codex in the same sandbox
 agents shell       # open bash in the sandbox
 agents stop        # stop the sandbox; its state stays
-agents rm          # remove the sandbox and its provisioned PAT
+agents rm          # remove the sandbox and its provisioned token
 ```
 
 The first `agents claude` shows the plan and asks for your approval. Then it builds the two local kits and creates the sandbox. The install hook of `kits/azure-devops` installs the Azure CLI, which takes approximately one minute. Later starts use the same sandbox and are fast.
 
 The sandbox name is `agents-<project folder>`. Thus each project gets its own sandbox.
+
+### Sign in to Claude
+
+Do this one time for each sandbox:
+
+1. In Claude Code in the sandbox, run `/login`.
+2. Select the Claude account (subscription) option.
+3. Open the URL in your browser on the host and sign in.
+4. Copy the code from the browser and paste it into the sandbox.
+
+The sandbox proxy catches the token exchange. It keeps the real tokens on the host and renews them. The sandbox gets only sentinels in `~/.claude/.credentials.json`.
 
 Optional settings, as environment variables on the host:
 
@@ -121,9 +132,13 @@ sbx policy log agents-<project folder>           # allowed and blocked requests
 
 The sandbox never gets a real secret.
 
-- Claude Code, Codex and `gh` use the global `anthropic`, `openai` and `github` secrets. Their kits set sentinels in `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GH_TOKEN`.
-- `kits/azure-devops` declares a credential for the service `azure-devops`. The sandbox gets a sentinel in `AZURE_DEVOPS_EXT_PAT`. On each request to `dev.azure.com`, `*.dev.azure.com` or `*.visualstudio.com`, the proxy sets `Authorization: Basic` with the PAT as the password. This covers `az devops`, `git` over HTTPS and `curl` to the REST API.
-- `sbxenv.local.yaml` provisions the `azure-devops` secret for this sandbox only. A host command reads it from the Keychain. `agents rm` deletes it.
+- Claude Code: after `/login` in the sandbox, the proxy holds the claude.ai OAuth tokens. The sandbox sees sentinels. With an `anthropic` API-key secret, the kit uses that key instead.
+- GitHub: the global `github` secret runs `gh auth token` on the host when the proxy needs a value. The sandbox sees a sentinel in `GH_TOKEN`.
+- Codex uses the global `openai` secret, if you set it. The sandbox sees a sentinel in `OPENAI_API_KEY`.
+- Azure DevOps: `kits/azure-devops` declares a credential for the service `azure-devops`. The sandbox gets a sentinel in `AZURE_DEVOPS_EXT_PAT`. On each request to `dev.azure.com`, `*.dev.azure.com` or `*.visualstudio.com`, the proxy sets `Authorization: Bearer` with your Entra ID token. This covers `az devops`, `git` over HTTPS and `curl` to the REST API.
+- `sbxenv.local.yaml` provisions the `azure-devops` secret for this sandbox only. A host command (`az account get-access-token`) gets it from your `az login` each 5 minutes. `agents rm` deletes it.
+
+If `az login` on the host expires, Azure DevOps calls in the sandbox fail with 401. Run `az login` on the host again.
 
 Use HTTPS remotes for Azure DevOps. SSH to `ssh.dev.azure.com` is blocked, because the proxy cannot add a credential to SSH.
 
@@ -149,20 +164,20 @@ To allow a host permanently in this kit, add it to `kits/agent-workbench/agent-w
 
 A cloud sandbox runs on Docker infrastructure. It has no host folder, so clone the repository in the sandbox.
 
-CAUTION: A cloud env file cannot provision the custom `azure-devops` secret, and a cloud secret cannot read from the Keychain at use time.
+CAUTION: A cloud env file cannot provision the custom `azure-devops` secret, and a cloud secret cannot run a host command at use time. An Entra ID token expires after approximately one hour, so Azure DevOps access in a cloud sandbox stops after that time. Store a new token to continue. For long runs, use a local sandbox.
 
-1. Store the PAT one time as a cloud custom secret. The cloud proxy sets the header to the stored value, so store the Base64 of `:<PAT>`:
+1. Store an Azure DevOps token one time as a cloud custom secret:
 
    ```sh
-   security find-generic-password -s sbx-azure-devops-pat -w | tr -d '\n' \
-     | (printf ':'; cat) | base64 \
+   az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+       --query accessToken --output tsv \
      | sbx --cloud secret set-custom --name azure-devops --host dev.azure.com \
-         --header Authorization --format 'Basic %s' --value-stdin
+         --header Authorization --format 'Bearer %s' --value-stdin
    ```
 
    Cloud custom secrets take exact host names only. Add one `--host` for each other host that you use, for example `--host vssps.dev.azure.com`.
 
-2. Store the model and GitHub secrets for the cloud: `sbx --cloud secret set anthropic`, `sbx --cloud secret set github`, and so on.
+2. Store the model and GitHub secrets for the cloud: `sbx --cloud secret set anthropic --oauth` (Claude account sign-in) and `gh auth token | sbx --cloud secret set github`.
 
 3. Start the sandbox:
 

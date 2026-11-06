@@ -9,12 +9,15 @@
 # A cloud environment file cannot provision the custom azure-devops secret.
 # Store it one time as a cloud custom secret (see README.md, "Cloud sandbox"):
 #
-#   printf ':%s' "$PAT" | base64 | sbx --cloud secret set-custom \
+#   az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+#       --query accessToken --output tsv | sbx --cloud secret set-custom \
 #     --name azure-devops --host dev.azure.com \
-#     --header Authorization --format 'Basic %s' --value-stdin
+#     --header Authorization --format 'Bearer %s' --value-stdin
+#
+# The token expires after approximately one hour.
 schemaVersion: "1"
 
 env:
-  # The az devops extension needs a PAT value to start. The proxy replaces the
+  # The az devops extension needs a value in AZURE_DEVOPS_EXT_PAT to start. The proxy replaces the
   # Authorization header on dev.azure.com, so this placeholder never leaves.
   AZURE_DEVOPS_EXT_PAT: proxy-managed

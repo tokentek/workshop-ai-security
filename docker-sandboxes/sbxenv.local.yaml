@@ -17,16 +17,18 @@ sandboxOptions:
   # Use a cached kit image when it is there. Local only.
   pullPolicy: missing
 
-# The Azure DevOps PAT, provisioned for this sandbox only. `sbx env rm`
-# deletes it. The command runs on the host and reads the PAT from the macOS
-# Keychain, so no secret value is in this file. The Anthropic, OpenAI and
-# GitHub secrets are global (`sbx secret set ...`), see README.md.
+# The Azure DevOps access token, provisioned for this sandbox only. `sbx env rm`
+# deletes it. The command runs on the host and uses your own `az login`, so no
+# PAT and no secret value is in this file. 499b84ac-... is the Azure DevOps
+# resource ID. An Entra ID token lives approximately one hour; `az` renews it
+# from its refresh token, and a short refresh period keeps the cache fresh.
+# The Anthropic, OpenAI and GitHub secrets are global, see README.md.
 secrets:
   azure-devops:
-    command: /usr/bin/security find-generic-password -s sbx-azure-devops-pat -w
-    refresh: 55m
+    command: /opt/homebrew/bin/az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken --output tsv
+    refresh: 5m
 
-# The hosts where the proxy may use the PAT.
+# The hosts where the proxy may use the token.
 bindings:
   azure-devops:
     apiKey:

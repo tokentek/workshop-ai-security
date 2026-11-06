@@ -119,4 +119,5 @@ Facts about `sbx env` (v0.51.0) that the docs do not give:
 - A later env file cannot remove `workspace:` (`null` gives "path cannot be blank"). Thus the base file has no workspace.
 - `sbx --cloud env` refuses `sandboxOptions.pullPolicy`, and `secrets` or `bindings` for a custom service such as `azure-devops`. Keep these in `sbxenv.local.yaml`.
 - `sbx env plan` works without `sbx login`. `sbx kit validate` and `kit inspect` need it. `docker buildx build -f <kit>.yaml` validates and builds a kit without sign-in.
-- A kit `credential@1` with a custom service (`azure-devops`), `scheme: basic` and wildcard inject domains builds without errors, and `sbx env plan` accepts a `secrets:` entry for that service. A live sandbox has not tested the injection yet.
+- A kit `credential@1` with a custom service (`azure-devops`), a `Bearer %s` header and wildcard inject domains builds without errors, and `sbx env plan` accepts a `secrets:` entry that runs `az account get-access-token` for that service. A live sandbox has not tested the injection yet.
+- The user cannot create PATs. Azure DevOps uses the Entra ID token from the host's `az login`, GitHub uses `gh auth token` (`sbx secret set github --command`), and Claude uses `/login` in the sandbox (the kit's OAuth interception).

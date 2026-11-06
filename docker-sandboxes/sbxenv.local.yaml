@@ -1,0 +1,36 @@
+# Local overlay for sbxenv.yaml. Use it after the main file:
+#
+#   sbx env run sbxenv.yaml sbxenv.local.yaml --env-arg workspace=$PWD
+#
+# or `agents claude` from the project folder.
+schemaVersion: "1"
+
+args:
+  workspace:
+    required: true
+    description: Absolute path of the project folder (the `agents` script passes $PWD)
+
+# The project folder, mounted read-write at the same path in the sandbox.
+workspace: "${{ env.args.workspace }}"
+
+sandboxOptions:
+  # Use a cached kit image when it is there. Local only.
+  pullPolicy: missing
+
+# The Azure DevOps PAT, provisioned for this sandbox only. `sbx env rm`
+# deletes it. The command runs on the host and reads the PAT from the macOS
+# Keychain, so no secret value is in this file. The Anthropic, OpenAI and
+# GitHub secrets are global (`sbx secret set ...`), see README.md.
+secrets:
+  azure-devops:
+    command: /usr/bin/security find-generic-password -s sbx-azure-devops-pat -w
+    refresh: 55m
+
+# The hosts where the proxy may use the PAT.
+bindings:
+  azure-devops:
+    apiKey:
+      domains:
+        - dev.azure.com
+        - "*.dev.azure.com"
+        - "*.visualstudio.com"

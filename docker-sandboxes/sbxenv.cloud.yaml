@@ -1,0 +1,20 @@
+# Cloud overlay for sbxenv.yaml. Use it after the main file:
+#
+#   sbx --cloud env run sbxenv.yaml sbxenv.cloud.yaml
+#
+# or `agents cloud`. A cloud sandbox has no host workspace: clone the
+# repository in the sandbox (`gh repo clone ...` or
+# `git clone https://dev.azure.com/<org>/<project>/_git/<repo>`).
+#
+# A cloud environment file cannot provision the custom azure-devops secret.
+# Store it one time as a cloud custom secret (see README.md, "Cloud sandbox"):
+#
+#   printf ':%s' "$PAT" | base64 | sbx --cloud secret set-custom \
+#     --name azure-devops --host dev.azure.com \
+#     --header Authorization --format 'Basic %s' --value-stdin
+schemaVersion: "1"
+
+env:
+  # The az devops extension needs a PAT value to start. The proxy replaces the
+  # Authorization header on dev.azure.com, so this placeholder never leaves.
+  AZURE_DEVOPS_EXT_PAT: proxy-managed

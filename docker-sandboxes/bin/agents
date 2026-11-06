@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# agents: start the autonomous-agents Docker Sandbox for the current project.
+#
+# Run it from the project folder that the agents work on. It calls `sbx env`
+# with this repo's sbxenv.yaml, the current folder as the workspace, and a
+# stable sandbox name (agents-<folder>), so every command finds the same sandbox.
+#
+#   agents plan          preview what `sbx env` will create
+#   agents claude        create (first time) and attach to Claude Code
+#   agents codex         run Codex in the same sandbox
+#   agents shell         open bash in the sandbox
+#   agents exec CMD...   run a command in the sandbox
+#   agents stop          stop the sandbox (keeps its state)
+#   agents rm            remove the sandbox and its provisioned secrets
+#   agents cloud         create (first time) and attach to a cloud sandbox
+#   agents cloud-rm      remove the cloud sandbox
+#
+# Environment variables (optional):
+#   AZDO_ORG, AZDO_PROJECT   Azure DevOps defaults for `az devops`
+#   CLAUDE_MODEL, CODEX_MODEL
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+base="$here/sbxenv.yaml"
+files=("$base" "$here/sbxenv.local.yaml")
+cloudfiles=("$base" "$here/sbxenv.cloud.yaml")
+workspace="$(pwd -P)"
+name="agents-$(basename "$workspace" | tr -c 'A-Za-z0-9_.-\n' '-')"
+
+env_args=(
+  --name "$name"
+  --env-arg "azdoOrg=${AZDO_ORG:-}"
+  --env-arg "azdoProject=${AZDO_PROJECT:-}"
+  --env-arg "claudeModel=${CLAUDE_MODEL:-}"
+  --env-arg "codexModel=${CODEX_MODEL:-}"
+)
+
+need_pat() {
+  if ! /usr/bin/security find-generic-password -s sbx-azure-devops-pat >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+The Azure DevOps PAT is not in the macOS Keychain. Store it one time:
+
+  security add-generic-password -a "$USER" -s sbx-azure-devops-pat -w
+
+(The command asks for the PAT. Use -U to replace an old one.)
+EOF
+    exit 1
+  fi
+}
+
+cmd="${1:-claude}"
+shift || true
+
+case "$cmd" in
+  plan)    exec sbx env plan "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" ;;
+  claude)  need_pat; exec sbx env run "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- "$@" ;;
+  codex)   need_pat
+           sbx env run --detach "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}"
+           exec sbx env exec -it -w "$workspace" "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- codex "$@" ;;
+  shell)   exec sbx env exec -it -w "$workspace" "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- bash -l ;;
+  exec)    exec sbx env exec -w "$workspace" "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- "$@" ;;
+  stop)    exec sbx stop "$name" ;;
+  rm)      exec sbx env rm "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" ;;
+  cloud)   exec sbx --cloud env run "${env_args[@]}" "${cloudfiles[@]}" -- "$@" ;;
+  cloud-rm) exec sbx --cloud env rm "${env_args[@]}" "${cloudfiles[@]}" ;;
+  -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "agents: unknown command '$cmd' (try: agents help)" >&2; exit 2 ;;
+esac

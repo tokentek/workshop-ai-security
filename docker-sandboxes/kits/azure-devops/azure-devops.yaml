@@ -95,7 +95,11 @@ capabilities:
             apt-get install -y -qq --no-install-recommends ca-certificates curl gnupg lsb-release >/dev/null
             # Microsoft's documented install script for Debian and Ubuntu.
             curl -fsSL https://aka.ms/InstallAzureCLIDeb | bash >/dev/null
-            az version --output none
+            # Check az with a throwaway config dir. A plain `az` call as root
+            # creates /home/agent/.azure owned by root, and the next hook (user
+            # agent) then fails with "Permission denied: .../.azure/config".
+            AZURE_CONFIG_DIR="$(mktemp -d)" az version --output none
+            if [ -d /home/agent/.azure ]; then chown -R agent: /home/agent/.azure; fi
           user: "0"
           description: Install the Azure CLI (one time, at create)
         - command: |

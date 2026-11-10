@@ -1,0 +1,6 @@
+{
+  "id": "claude-code",
+  "version": "1.0.0",
+  "name": "Claude Code (native installer)",
+  "description": "Installs Claude Code with Anthropic's native installer, for the container user."
+}

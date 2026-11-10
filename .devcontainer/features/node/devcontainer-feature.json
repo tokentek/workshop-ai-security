@@ -1,0 +1,13 @@
+{
+  "id": "node",
+  "version": "1.0.0",
+  "name": "Node.js (from nodejs.org)",
+  "description": "Installs Node.js and npm from the official nodejs.org downloads.",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "22",
+      "description": "The major version of Node.js."
+    }
+  }
+}

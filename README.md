@@ -47,6 +47,10 @@ security-advisor works in the Claude Code CLI, Claude Code Desktop and the Claud
 /plugin uninstall security-advisor@ai-security-workshop
 ```
 
+## Demo devcontainer
+
+The [`.devcontainer`](.devcontainer) folder at the repo root is a devcontainer with Node.js, Claude Code and Codex. It shows features, VS Code customizations, a login that stays, an egress firewall and a Claude Desktop connection over SSH. Open the repo in VS Code and click **Reopen in Container**. See its [README](.devcontainer/README.md).
+
 ## Safe Workshop Box
 
 The [`safe-workshop-box`](safe-workshop-box) folder is a dev container: a safe, separate room for Claude Code with a firewall. See its [README](safe-workshop-box/README.md).

@@ -1,0 +1,15 @@
+{
+  "id": "firewall",
+  "version": "1.0.0",
+  "name": "Egress firewall",
+  "description": "Blocks all outgoing traffic except the sites on the allowlist.",
+  "options": {
+    "allowedSites": {
+      "type": "string",
+      "default": "api.anthropic.com claude.ai platform.claude.com",
+      "description": "Sites that the container can reach, separated by spaces."
+    }
+  },
+  "capAdd": ["NET_ADMIN", "NET_RAW"],
+  "postStartCommand": "sudo /usr/local/bin/firewall.sh"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "corporate-ca",
+  "version": "1.0.0",
+  "name": "Company root certificates",
+  "description": "Trusts the root certificates in the certs folder, for networks that inspect TLS traffic. Does nothing if the folder is empty.",
+  "containerEnv": {
+    "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/ca-certificates.crt"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "id": "codex",
+  "version": "1.0.0",
+  "name": "OpenAI Codex CLI (from GitHub releases)",
+  "description": "Installs the Codex CLI binary from the official openai/codex GitHub releases."
+}

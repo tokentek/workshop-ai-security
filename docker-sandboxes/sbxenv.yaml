@@ -4,10 +4,6 @@
 # for Azure DevOps, and an egress allowlist. All credentials are proxy-managed:
 # the sandbox sees sentinels, and the host proxy adds the real values.
 #
-# This is the common base. Use it with one overlay:
-#   sbxenv.local.yaml   local sandbox, mounts the project folder
-#   sbxenv.cloud.yaml   Docker cloud sandbox, no host folder
-#
 # See README.md for the one-time setup. Use the `bin/agents` script from the
 # project folder that the agents work on; it passes the folder and a sandbox
 # name to `sbx env`:
@@ -16,13 +12,21 @@
 #   agents claude   # create (first time) and attach to Claude Code
 #   agents codex    # Codex in the same sandbox
 #   agents rm       # remove the sandbox and its provisioned secrets
+#
+# Without the script:
+#
+#   sbx env run sbxenv.yaml --name agents-myproject --env-arg workspace=$HOME/src/myproject
 schemaVersion: "1"
 
 # The v3 workload is Claude Code. `agent:` is the handle that sbx derives from
-# the kit reference; the reference itself is in `kits:`.
+# the kit reference; the reference itself is in `kits:`. The tags pin the
+# versions. (`agent: claude` with no workload in `kits:` takes the newest kit.)
 agent: sbx-kit-claude
 
 args:
+  workspace:
+    required: true
+    description: Absolute path of the project folder (the `agents` script passes $PWD)
   azdoOrg:
     default: ""
     description: Azure DevOps organization (https://dev.azure.com/<org>)
@@ -55,16 +59,34 @@ kits:
   # Git identity, package-registry egress, working rules for the agents.
   - ./kits/agent-workbench
 
-# No workspace here: sbxenv.local.yaml mounts the project folder, and a cloud
-# sandbox (sbxenv.cloud.yaml) has no host workspace.
+# The project folder, mounted read-write at the same path in the sandbox.
+# It must not contain this file: the `secrets` command below runs on the host,
+# and the agent can write to the workspace. `agents` checks this.
+workspace: "${{ env.args.workspace }}"
 
 sandboxOptions:
   cpus: 4
   memory: 8g
+  # Use a cached kit image when it is there.
+  pullPolicy: missing
+
+# The Azure DevOps access token, provisioned for this sandbox only. `sbx env rm`
+# deletes it. The command runs on the host and uses your own `az login`, so no
+# PAT and no secret value is in this file. 499b84ac-... is the Azure DevOps
+# resource ID. An Entra ID token lives approximately one hour; `az` renews it
+# from its refresh token, and a short refresh period keeps the cache fresh.
+# The Anthropic, OpenAI and GitHub secrets are global, see README.md.
+#
+# sbx runs the command from a temporary folder, so the path of `az` is
+# absolute. /opt/homebrew/bin is Homebrew on macOS. On Linux, write the
+# result of `command -v az` (usually /usr/bin/az).
+secrets:
+  azure-devops:
+    command: /opt/homebrew/bin/az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken --output tsv
+    refresh: 5m
 
 # The hosts where the proxy may use each stored credential. These merge into
-# ~/.config/sbx/credentials.yaml. The azure-devops binding is in
-# sbxenv.local.yaml, because cloud env files do not accept custom services.
+# ~/.config/sbx/credentials.yaml.
 bindings:
   github:
     apiKey:
@@ -72,3 +94,9 @@ bindings:
         - api.github.com
         - uploads.github.com
         - github.com
+  azure-devops:
+    apiKey:
+      domains:
+        - dev.azure.com
+        - "*.dev.azure.com"
+        - "*.visualstudio.com"

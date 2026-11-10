@@ -12,8 +12,6 @@
 #   agents exec CMD...   run a command in the sandbox
 #   agents stop          stop the sandbox (keeps its state)
 #   agents rm            remove the sandbox and its provisioned secrets
-#   agents cloud         create (first time) and attach to a cloud sandbox
-#   agents cloud-rm      remove the cloud sandbox
 #
 # Environment variables (optional):
 #   AZDO_ORG, AZDO_PROJECT   Azure DevOps defaults for `az devops`
@@ -26,23 +24,40 @@ while [ -L "$self" ]; do
   link="$(readlink "$self")"
   case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac
 done
-here="$(cd "$(dirname "$self")/.." && pwd)"
-base="$here/sbxenv.yaml"
-files=("$base" "$here/sbxenv.local.yaml")
-cloudfiles=("$base" "$here/sbxenv.cloud.yaml")
+here="$(cd "$(dirname "$self")/.." && pwd -P)"
 workspace="$(pwd -P)"
-name="agents-$(basename "$workspace" | tr -c 'A-Za-z0-9_.-\n' '-')"
+# The "-" is last in the set: GNU tr reads ".-\n" as a range and fails.
+name="agents-$(basename "$workspace" | tr -c 'A-Za-z0-9_.\n-' '-')"
 
-env_args=(
+# Every `sbx env` command on one sandbox needs the same name, args and file.
+envfile=(
   --name "$name"
+  --env-arg "workspace=$workspace"
   --env-arg "azdoOrg=${AZDO_ORG:-}"
   --env-arg "azdoProject=${AZDO_PROJECT:-}"
   --env-arg "claudeModel=${CLAUDE_MODEL:-}"
   --env-arg "codexModel=${CODEX_MODEL:-}"
+  "$here/sbxenv.yaml"
 )
 
-need_pat() {
-  if ! /opt/homebrew/bin/az account get-access-token \
+# This script and sbxenv.yaml run commands on the host. The agent can write
+# to the workspace. So the workspace must not contain them: an agent that can
+# edit them can run code on the host at the next start.
+check_workspace() {
+  case "$here/" in
+    "${workspace%/}/"*)
+      cat >&2 <<EOF
+agents: this folder contains the sandbox configuration ($here).
+The agent can write to its workspace, and the configuration runs commands on
+your computer. Go to a project folder outside it, then run 'agents' again.
+EOF
+      exit 1 ;;
+  esac
+}
+
+# The sandbox gets its Azure DevOps token from the host's `az login`.
+check_az_login() {
+  if ! az account get-access-token \
        --resource 499b84ac-1321-427f-aa17-267ca6975798 --output none >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 The Azure CLI on the host cannot get an Azure DevOps token. Sign in one time:
@@ -59,17 +74,17 @@ cmd="${1:-claude}"
 shift || true
 
 case "$cmd" in
-  plan)    exec sbx env plan "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" ;;
-  claude)  need_pat; exec sbx env run "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- "$@" ;;
-  codex)   need_pat
-           sbx env run --detach "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}"
-           exec sbx env exec -it -w "$workspace" "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- codex "$@" ;;
-  shell)   exec sbx env exec -it -w "$workspace" "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- bash -l ;;
-  exec)    exec sbx env exec -w "$workspace" "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" -- "$@" ;;
+  plan)    check_workspace
+           exec sbx env plan "${envfile[@]}" ;;
+  claude)  check_workspace; check_az_login
+           exec sbx env run "${envfile[@]}" -- "$@" ;;
+  codex)   check_workspace; check_az_login
+           sbx env run --detach "${envfile[@]}"
+           exec sbx env exec -it -w "$workspace" "${envfile[@]}" -- codex "$@" ;;
+  shell)   exec sbx env exec -it -w "$workspace" "${envfile[@]}" -- bash -l ;;
+  exec)    exec sbx env exec -w "$workspace" "${envfile[@]}" -- "$@" ;;
   stop)    exec sbx stop "$name" ;;
-  rm)      exec sbx env rm "${env_args[@]}" --env-arg "workspace=$workspace" "${files[@]}" ;;
-  cloud)   exec sbx --cloud env run "${env_args[@]}" "${cloudfiles[@]}" -- "$@" ;;
-  cloud-rm) exec sbx --cloud env rm "${env_args[@]}" "${cloudfiles[@]}" ;;
-  -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+  rm)      exec sbx env rm "${envfile[@]}" ;;
+  -h|--help|help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "agents: unknown command '$cmd' (try: agents help)" >&2; exit 2 ;;
 esac

@@ -9,7 +9,7 @@
 # The token never enters the sandbox. AZURE_DEVOPS_EXT_PAT holds a sentinel, and
 # the proxy sets "Authorization: Bearer <token>" on each request to the Azure
 # DevOps hosts below. The host gets the token from its own `az login`
-# (sbxenv.local.yaml), so no Personal Access Token (PAT) is necessary.
+# (sbxenv.yaml), so no Personal Access Token (PAT) is necessary.
 schemaVersion: "3"
 displayName: Azure DevOps
 description: Azure CLI with the azure-devops extension, git over HTTPS, and a proxy-managed Entra ID token
@@ -62,10 +62,21 @@ capabilities:
           - azcliextensionsync.blob.core.windows.net
         deny:
           # The agent may change code, work items and pipelines, but it may
-          # not delete repositories or projects with the injected token.
-          - hosts: [dev.azure.com]
+          # not send DELETE for a project or for anything in a repository
+          # (the repository itself is one such request). Deny wins over allow.
+          # In a path, "*" is one segment and "**" is any depth. The first
+          # segments are the organization, the collection and the project:
+          #   dev.azure.com/<org>/_apis/...   <org>.visualstudio.com/_apis/...
+          #   dev.azure.com/<org>/<project>/_apis/...
+          #   <org>.visualstudio.com/DefaultCollection/<project>/_apis/...
+          - hosts: [dev.azure.com, "*.visualstudio.com"]
             methods: [DELETE]
-            paths: ["/*/_apis/git/repositories/**", "/*/_apis/projects/**", "/*/*/_apis/git/repositories/**"]
+            paths:
+              - "/_apis/projects/**"
+              - "/*/_apis/projects/**"
+              - "/_apis/git/repositories/**"
+              - "/*/_apis/git/repositories/**"
+              - "/*/*/_apis/git/repositories/**"
 
   - type: com.docker.sandbox/credential@1
     description: Azure DevOps access token (Entra ID, from the host's az login)
@@ -119,14 +130,8 @@ capabilities:
           user: agent
           env: [AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECT]
           description: Add the azure-devops extension and set the defaults
-        - command: |
-            set -e
-            # git sends the request without credentials and the proxy adds
-            # the token. Never ask for a password in a headless session.
-            git config --global credential.https://dev.azure.com.useHttpPath true
-            git config --global core.askPass ""
-          user: agent
-          description: Configure git for Azure DevOps over HTTPS
+    # git needs no setup: it sends the request without credentials, and the
+    # proxy adds the token before Azure DevOps sees the request.
 
   - type: com.docker.sandbox/agent-context@1
     optional: true
@@ -145,8 +150,11 @@ capabilities:
         - For REST calls without a CLI command, use `az devops invoke` or
           `curl https://dev.azure.com/<org>/_apis/...?api-version=7.1`. The proxy adds
           the credential, so do not add an Authorization header.
-        - Deleting repositories or projects is blocked by the network policy.
+        - The network policy blocks `DELETE` requests for projects and for
+          anything in a repository (the answer is HTTP 403). Do not try to go
+          around the block.
 
+  # The same text for runtimes that read version 2 (the official kits do this too).
   - type: com.docker.sandbox/agent-context@2
     optional: true
     config: *agent-context

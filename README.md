@@ -55,6 +55,10 @@ The [`.devcontainer`](.devcontainer) folder at the repo root is a devcontainer w
 
 The [`safe-workshop-box`](safe-workshop-box) folder is a dev container: a safe, separate room for Claude Code with a firewall. See its [README](safe-workshop-box/README.md).
 
+## Docker Sandbox
+
+The [`docker-sandboxes`](docker-sandboxes) folder runs Claude Code and Codex in a Docker Sandbox: a microVM with a network allowlist, and with credentials that stay on the host. See its [README](docker-sandboxes/README.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

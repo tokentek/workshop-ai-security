@@ -3,8 +3,12 @@
 #
 # Shared defaults for autonomous coding agents (Claude Code and Codex):
 #   - commits carry the user's own Git identity,
-#   - the agents can reach the common package registries, and nothing else,
+#   - the agents can download from the common package registries (GET and
+#     HEAD only),
 #   - both agents read the same working rules.
+#
+# The read-only bound holds when no other rule allows the same host without
+# a bound: allow rules add up. Use the Locked Down network preset (README.md).
 #
 # The agent kits (claude, codex-mixin), gh and azure-devops bring their own
 # egress and credentials. This kit adds only what a build or test run needs.
@@ -60,13 +64,15 @@ capabilities:
           request: `gh pr create` for GitHub, `az repos pr create` for Azure DevOps.
         - Run the tests and linters of the repository before you commit.
         - Write small commits with clear messages. Git uses the identity of the user.
-        - Credentials are proxy-managed: `GH_TOKEN`, `AZURE_DEVOPS_EXT_PAT`,
-          `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` hold sentinels. Do not print
-          them, do not log in, and do not write tokens to files.
+        - Credentials are proxy-managed. The tokens that you can see (for
+          example `GH_TOKEN`, `AZURE_DEVOPS_EXT_PAT`, `OPENAI_API_KEY`) are
+          placeholders, and the sandbox proxy adds the real values to the
+          requests. Do not log in again, and do not write tokens to files.
         - The network is an allowlist. When a host is blocked, do not try to go
           around the block. Report the host to the user, who can run
           `sbx policy allow network <host>` on the host.
 
+  # The same text for runtimes that read version 2 (the official kits do this too).
   - type: com.docker.sandbox/agent-context@2
     optional: true
     config: *agent-context

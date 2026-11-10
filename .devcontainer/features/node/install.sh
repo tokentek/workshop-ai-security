@@ -10,10 +10,16 @@ case "$(uname -m)" in
 esac
 
 base="https://nodejs.org/dist/latest-v${VERSION}.x"
-file=$(curl -fsSL "$base/SHASUMS256.txt" | awk -v a="linux-${arch}.tar.gz" '$2 ~ a"$" {print $2}')
+
+# The checksum line of the file for this computer: "<sha256>  node-v22.x.y-linux-arm64.tar.gz"
+checksum=$(curl -fsSL "$base/SHASUMS256.txt" | grep "linux-${arch}\.tar\.gz\$")
+file=${checksum##* }
+
 curl -fsSL "$base/$file" -o "/tmp/$file"
-(cd /tmp && curl -fsSL "$base/SHASUMS256.txt" | grep " $file\$" | sha256sum -c -)
-tar -xzf "/tmp/$file" -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE
+(cd /tmp && echo "$checksum" | sha256sum -c -)
+
+# --no-same-owner: the files belong to root, not to the user ID in the archive
+tar -xzf "/tmp/$file" -C /usr/local --strip-components=1 --no-same-owner --exclude='*.md' --exclude=LICENSE
 rm "/tmp/$file"
 
 echo "Installed Node.js $(node --version) and npm $(npm --version)."

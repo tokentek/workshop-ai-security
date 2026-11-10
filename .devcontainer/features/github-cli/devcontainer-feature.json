@@ -1,0 +1,6 @@
+{
+  "id": "github-cli",
+  "version": "1.0.0",
+  "name": "GitHub CLI (from GitHub releases)",
+  "description": "Installs the gh binary from the official cli/cli GitHub releases, and makes git use the gh login for github.com."
+}

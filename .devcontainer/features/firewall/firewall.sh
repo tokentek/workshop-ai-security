@@ -7,13 +7,12 @@ ALLOWED_SITES=$(cat /usr/local/etc/firewall-allowlist)
 
 iptables -F OUTPUT
 
-# Always allowed: localhost, DNS, replies, and the host machine (VS Code needs this)
+# Always allowed: localhost, DNS and replies.
+# VS Code and Claude Desktop connect with "docker exec", so they need no rule here.
 iptables -A OUTPUT -o lo -j ACCEPT
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-HOST_NETWORK=$(ip route | awk '/default/ {print $3}' | sed 's/\.[0-9]*$/.0\/24/')
-iptables -A OUTPUT -d "$HOST_NETWORK" -j ACCEPT
 
 # Let each allowed site through (the IP addresses are found now, at start)
 count=0

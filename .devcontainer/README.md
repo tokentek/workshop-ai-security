@@ -1,6 +1,6 @@
 # AI Workshop Demo devcontainer
 
-This devcontainer gives you a ready computer with Node.js, Claude Code and Codex. Open the repo in VS Code and click **Reopen in Container**. That is all.
+This devcontainer gives you a ready computer with Node.js, Claude Code, Codex and the GitHub CLI. Open the repo in VS Code and click **Reopen in Container**. That is all.
 
 ## What is in the folder
 
@@ -13,6 +13,7 @@ This devcontainer gives you a ready computer with Node.js, Claude Code and Codex
     ├── node/                Node.js from nodejs.org
     ├── claude-code/         Claude Code with the native installer from claude.ai
     ├── codex/               the Codex CLI from GitHub releases
+    ├── github-cli/          the GitHub CLI (gh) from GitHub releases, for git push and pull requests
     └── firewall/            blocks all outgoing traffic except an allowlist
 ```
 
@@ -25,7 +26,7 @@ There is no Dockerfile. The container starts from a small base image, and the fe
 | `image` | A small base image from Microsoft, with no dev tools. |
 | `features` | Add-ons that install tools. `ghcr.io/...` is a ready-made feature from a registry (here: `sshd`). `./features/...` is our own feature, in this repo. A feature can have options (`"version": "22"`, `"allowedSites"`). |
 | `overrideFeatureInstallOrder` | The features in this list install first. The certificate must come before the downloads. |
-| `mounts` + `containerEnv` | Named Docker volumes keep the Claude and Codex login. You log in one time. The login stays after a reconnect, a rebuild or a new container. |
+| `mounts` + `containerEnv` | Named Docker volumes keep the Claude, Codex and GitHub CLI login. You log in one time. The login stays after a reconnect, a rebuild or a new container. |
 | `customizations.vscode` | VS Code settings and extensions for the container window only. The window turns purple, so you always see that you are in the container. |
 | `postStartCommand` | A command that runs at each start of the container. A feature can have one too: the firewall starts this way. |
 | `initializeCommand` | A command that runs on **your** computer before the build. Here it makes an SSH key for Claude Desktop. |
@@ -43,11 +44,23 @@ There is no Dockerfile. The container starts from a small base image, and the fe
 2. Run `codex login`. VS Code forwards port 1455, so the browser login comes back to the container.
 3. Close the window and reopen the container. You are still logged in.
 
-The login is in the Docker volumes `ai-workshop-claude` and `ai-workshop-codex`. To log out completely, delete the volumes:
+The login is in the Docker volumes `ai-workshop-claude`, `ai-workshop-codex` and `ai-workshop-gh`. To log out completely, delete the volumes:
 
 ```sh
-docker volume rm ai-workshop-claude ai-workshop-codex
+docker volume rm ai-workshop-claude ai-workshop-codex ai-workshop-gh
 ```
+
+## Push and make pull requests (optional)
+
+The container has the GitHub CLI (`gh`). After you log in, `git push` and `gh pr create` work in every session, also over SSH from Claude Desktop.
+
+A token in the container is a token that the agent can use. Give it as little access as possible:
+
+1. On GitHub, make a **fine-grained personal access token** for this repo only, with read and write access to **Contents** and **Pull requests**. For a repo in an organization, the organization must allow such tokens.
+2. In the container terminal, run `gh auth login`. Select **GitHub.com**, **HTTPS**, and **Paste an authentication token**.
+3. Test it: `gh auth status`.
+
+Do not use the browser login of `gh auth login`: it gives a token with access to all your repos. Protect the `main` branch on GitHub, so that the token can push branches and open pull requests, but cannot change `main`.
 
 ## Connect from Claude Desktop (SSH)
 

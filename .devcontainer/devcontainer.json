@@ -14,13 +14,14 @@
     "./features/node": { "version": "22" },
     "./features/claude-code": {},
     "./features/codex": {},
+    "./features/github-cli": {},
 
     // A ready-made feature: SSH server (with SFTP), so that Claude Desktop can connect
     "ghcr.io/devcontainers/features/sshd:1": {},
 
     // Block all outgoing traffic except these sites, and limit sudo to the firewall script (see features/firewall)
     "./features/firewall": {
-      "allowedSites": "api.anthropic.com claude.ai platform.claude.com downloads.claude.ai api.openai.com auth.openai.com chatgpt.com registry.npmjs.org github.com update.code.visualstudio.com vscode.download.prss.microsoft.com marketplace.visualstudio.com gallery.vsassets.io gallerycdn.vsassets.io anthropic.gallerycdn.vsassets.io openai.gallerycdn.vsassets.io"
+      "allowedSites": "api.anthropic.com claude.ai platform.claude.com downloads.claude.ai api.openai.com auth.openai.com chatgpt.com registry.npmjs.org github.com api.github.com update.code.visualstudio.com vscode.download.prss.microsoft.com marketplace.visualstudio.com gallery.vsassets.io gallerycdn.vsassets.io anthropic.gallerycdn.vsassets.io openai.gallerycdn.vsassets.io"
     }
   },
 
@@ -36,7 +37,7 @@
   // Claude Desktop: runs on YOUR computer before the build. Makes a key for this container only.
   "initializeCommand": "test -f \"$HOME/.ssh/ai-workshop-demo\" || (mkdir -p \"$HOME/.ssh\" && ssh-keygen -q -t ed25519 -N '' -C ai-workshop-demo -f \"$HOME/.ssh/ai-workshop-demo\")",
 
-  // Login: keep the Claude and Codex config in named volumes, so that you log in one time only.
+  // Login: keep the Claude, Codex and GitHub CLI config in named volumes, so that you log in one time only.
   // CLAUDE_CONFIG_DIR puts the file .claude.json in the volume too (the default place is the home folder).
   "containerEnv": {
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
@@ -44,6 +45,7 @@
   "mounts": [
     "source=ai-workshop-claude,target=/home/vscode/.claude,type=volume",
     "source=ai-workshop-codex,target=/home/vscode/.codex,type=volume",
+    "source=ai-workshop-gh,target=/home/vscode/.config/gh,type=volume",
     // Claude Desktop: only the PUBLIC key, read-only (never a private key)
     "source=${localEnv:HOME}/.ssh/ai-workshop-demo.pub,target=/tmp/host-key.pub,type=bind,readonly"
   ],

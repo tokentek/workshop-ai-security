@@ -10,6 +10,6 @@
       "description": "Sites that the container can reach, separated by spaces."
     }
   },
-  "capAdd": ["NET_ADMIN", "NET_RAW"],
+  "capAdd": ["NET_ADMIN"],
   "postStartCommand": "sudo /usr/local/bin/firewall.sh"
 }

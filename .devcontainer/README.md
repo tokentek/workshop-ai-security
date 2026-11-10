@@ -7,6 +7,7 @@ This devcontainer gives you a ready computer with Node.js, Claude Code and Codex
 ```
 .devcontainer/
 ├── devcontainer.json        the instructions: image, features, login volumes, colours
+├── devcontainer-lock.json   the exact version of each ready-made feature (here: sshd)
 └── features/                our own local features
     ├── corporate-ca/        trusts a company root certificate (if you put one in certs/)
     ├── node/                Node.js from nodejs.org
@@ -23,15 +24,15 @@ There is no Dockerfile. The container starts from a small base image, and the fe
 |---|---|
 | `image` | A small base image from Microsoft, with no dev tools. |
 | `features` | Add-ons that install tools. `ghcr.io/...` is a ready-made feature from a registry (here: `sshd`). `./features/...` is our own feature, in this repo. A feature can have options (`"version": "22"`, `"allowedSites"`). |
-| `overrideFeatureInstallOrder` | The features install in this order. The certificate must come first. |
+| `overrideFeatureInstallOrder` | The features in this list install first. The certificate must come before the downloads. |
 | `mounts` + `containerEnv` | Named Docker volumes keep the Claude and Codex login. You log in one time. The login stays after a reconnect, a rebuild or a new container. |
 | `customizations.vscode` | VS Code settings and extensions for the container window only. The window turns purple, so you always see that you are in the container. |
-| `postCreateCommand`, `postStartCommand` | Commands that run after the container is made, and at each start. |
+| `postStartCommand` | A command that runs at each start of the container. A feature can have one too: the firewall starts this way. |
 | `initializeCommand` | A command that runs on **your** computer before the build. Here it makes an SSH key for Claude Desktop. |
 
 ## Connect from VS Code
 
-1. Install **Docker Desktop** and **VS Code** with the **Dev Containers** extension.
+1. Install **Docker Desktop** and **VS Code** with the **Dev Containers** extension. On Windows, clone and open the repo in WSL, because `initializeCommand` is a Linux shell command.
 2. Open the repo folder in VS Code.
 3. Click **Reopen in Container** (or run *Dev Containers: Reopen in Container* from the command palette).
 4. Wait until the terminal shows `Firewall is ON`.
@@ -73,7 +74,7 @@ How it works: the `ProxyCommand` starts `sshd` in the container with `docker exe
 
 Good to know:
 
-- The connection uses `docker exec`, so the container opens no network port.
+- The connection uses `docker exec`, so the container publishes no port to your computer. The `sshd` feature also starts an SSH server on port 2222 in the Docker network. This connection does not use it.
 - The firewall stays on. Claude can reach only the sites in `allowedSites`.
 - The key `~/.ssh/ai-workshop-demo` is for this container only. Only the public key goes into the container.
 - The first connection installs Claude Code in `~/.claude/remote/` (about 1 GB, in the login volume, one time only).
@@ -88,11 +89,18 @@ All outgoing traffic is blocked, except the sites in `allowedSites` in `devconta
 |---|---|
 | `curl -I https://api.anthropic.com` | An answer: on the allowlist |
 | `curl https://example.com` | `Couldn't connect`: blocked |
+| `sudo iptables -F OUTPUT` | A password question: the user cannot switch the firewall off |
 
 **Challenge:** add `example.com` to `allowedSites`, then run *Dev Containers: Rebuild Container*. Can you reach example.com now?
 
+The base image lets the `vscode` user run every command with `sudo`. The firewall feature changes that: `sudo` works for the firewall script only. Without this change, an agent in the container can remove the firewall rules with one command. To install a tool, add a feature and rebuild.
+
 Limits:
 
+- DNS is open to every server, so data can leave the container in DNS questions.
+- `github.com` is on the allowlist, so an agent can push data to any repo there. An allowlist of sites does not control what data goes to those sites.
+- The allowlist is a list of IP addresses. Other sites on the same address (a CDN, or a company proxy) are reachable too.
+- The firewall starts after the container starts. For the first seconds, all traffic is open.
 - The firewall finds the IP addresses of the sites when the container starts. Some sites change their addresses. If a site stops working, restart the container.
 - If a VS Code extension does not install, its download site is not on the allowlist. Find the site in the VS Code log and add it.
 

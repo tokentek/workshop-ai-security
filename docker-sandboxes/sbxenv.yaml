@@ -1,0 +1,74 @@
+# Docker Sandboxes environment: autonomous coding agents.
+#
+# One sandbox with Claude Code (the workload) and Codex, gh, git, the Azure CLI
+# for Azure DevOps, and an egress allowlist. All credentials are proxy-managed:
+# the sandbox sees sentinels, and the host proxy adds the real values.
+#
+# This is the common base. Use it with one overlay:
+#   sbxenv.local.yaml   local sandbox, mounts the project folder
+#   sbxenv.cloud.yaml   Docker cloud sandbox, no host folder
+#
+# See README.md for the one-time setup. Use the `bin/agents` script from the
+# project folder that the agents work on; it passes the folder and a sandbox
+# name to `sbx env`:
+#
+#   agents plan     # preview
+#   agents claude   # create (first time) and attach to Claude Code
+#   agents codex    # Codex in the same sandbox
+#   agents rm       # remove the sandbox and its provisioned secrets
+schemaVersion: "1"
+
+# The v3 workload is Claude Code. `agent:` is the handle that sbx derives from
+# the kit reference; the reference itself is in `kits:`.
+agent: sbx-kit-claude
+
+args:
+  azdoOrg:
+    default: ""
+    description: Azure DevOps organization (https://dev.azure.com/<org>)
+  azdoProject:
+    default: ""
+    description: Default Azure DevOps project
+  claudeModel:
+    default: ""
+    description: Claude model; empty keeps the Claude Code default
+  codexModel:
+    default: ""
+    description: Codex model; empty keeps the Codex default
+
+kits:
+  # Workload: Claude Code, with the Anthropic egress and credential.
+  - source: docker.io/docker/sbx-kit-claude:2.1.316
+    args:
+      model: "${{ env.args.claudeModel }}"
+  # Codex CLI, with the OpenAI egress and credential.
+  - source: docker.io/docker/sbx-kit-codex-mixin:0.166.0
+    args:
+      model: "${{ env.args.codexModel }}"
+  # GitHub CLI, with the GitHub egress and credential.
+  - docker.io/docker/sbx-kit-gh:2.103.2
+  # Azure CLI + azure-devops extension, git over HTTPS, the Entra ID token credential.
+  - source: ./kits/azure-devops
+    args:
+      organization: "${{ env.args.azdoOrg }}"
+      project: "${{ env.args.azdoProject }}"
+  # Git identity, package-registry egress, working rules for the agents.
+  - ./kits/agent-workbench
+
+# No workspace here: sbxenv.local.yaml mounts the project folder, and a cloud
+# sandbox (sbxenv.cloud.yaml) has no host workspace.
+
+sandboxOptions:
+  cpus: 4
+  memory: 8g
+
+# The hosts where the proxy may use each stored credential. These merge into
+# ~/.config/sbx/credentials.yaml. The azure-devops binding is in
+# sbxenv.local.yaml, because cloud env files do not accept custom services.
+bindings:
+  github:
+    apiKey:
+      domains:
+        - api.github.com
+        - uploads.github.com
+        - github.com

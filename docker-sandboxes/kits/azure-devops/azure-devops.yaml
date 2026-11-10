@@ -1,0 +1,152 @@
+# syntax=docker/sandbox-kit:3
+# yaml-language-server: $schema=https://raw.githubusercontent.com/docker/sandbox-kit-spec/main/schema/kit.schema.json
+#
+# Azure DevOps access for an agent sandbox:
+#   - the Azure CLI with the azure-devops extension (`az repos`, `az boards`, ...),
+#   - git over HTTPS to dev.azure.com,
+#   - the user's Microsoft Entra ID access token, injected by the sandbox proxy.
+#
+# The token never enters the sandbox. AZURE_DEVOPS_EXT_PAT holds a sentinel, and
+# the proxy sets "Authorization: Bearer <token>" on each request to the Azure
+# DevOps hosts below. The host gets the token from its own `az login`
+# (sbxenv.local.yaml), so no Personal Access Token (PAT) is necessary.
+schemaVersion: "3"
+displayName: Azure DevOps
+description: Azure CLI with the azure-devops extension, git over HTTPS, and a proxy-managed Entra ID token
+sourceUrl: https://learn.microsoft.com/azure/devops/cli/
+licenses: [MIT]
+
+kind: mixin
+
+args:
+  organization:
+    default: ""
+    pattern: '^[A-Za-z0-9._-]*$'
+    description: Azure DevOps organization name (https://dev.azure.com/<organization>); empty leaves `az devops configure` unset
+    env: AZURE_DEVOPS_ORG
+  project:
+    default: ""
+    pattern: '^[A-Za-z0-9 ._-]*$'
+    description: Default Azure DevOps project for `az devops`; empty leaves it unset
+    env: AZURE_DEVOPS_PROJECT
+
+version: "1.0.0"
+provides: ["azure-devops"]
+
+capabilities:
+  - type: com.docker.sandbox/network-policy@2
+    config:
+      # Open only while the install hook runs: the Azure CLI apt repository,
+      # the Debian mirrors, and the extension index and download.
+      install:
+        allow:
+          - aka.ms
+          - azurecliprod.blob.core.windows.net
+          - packages.microsoft.com
+          - deb.debian.org
+          - security.debian.org
+          - azcliextensionsync.blob.core.windows.net
+          - azurecliextensionsync.blob.core.windows.net
+          - pypi.org
+          - files.pythonhosted.org
+      runtime:
+        allow:
+          # REST APIs (az devops, az repos, az boards, az pipelines) and git
+          # over HTTPS. Organization-scoped services use sub-domains, for
+          # example vssps.dev.azure.com, vsrm.dev.azure.com, pkgs.dev.azure.com.
+          - dev.azure.com
+          - "*.dev.azure.com"
+          # Older organization URLs: https://<organization>.visualstudio.com
+          - "*.visualstudio.com"
+          # `az` checks the extension index at start.
+          - azcliextensionsync.blob.core.windows.net
+        deny:
+          # The agent may change code, work items and pipelines, but it may
+          # not delete repositories or projects with the injected token.
+          - hosts: [dev.azure.com]
+            methods: [DELETE]
+            paths: ["/*/_apis/git/repositories/**", "/*/_apis/projects/**", "/*/*/_apis/git/repositories/**"]
+
+  - type: com.docker.sandbox/credential@1
+    description: Azure DevOps access token (Entra ID, from the host's az login)
+    optional: true
+    config:
+      service: azure-devops
+      phase: runtime
+      apiKey:
+        # The Azure CLI devops extension needs a value in this variable to
+        # start. In the sandbox it holds a sentinel, never the real token.
+        # The proxy replaces the Authorization header that az sends.
+        name: AZURE_DEVOPS_EXT_PAT
+        proxyManaged: true
+        inject:
+          - {domain: dev.azure.com, header: Authorization, format: "Bearer %s"}
+          - {domain: "*.dev.azure.com", header: Authorization, format: "Bearer %s"}
+          - {domain: "*.visualstudio.com", header: Authorization, format: "Bearer %s"}
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        - command: |
+            set -e
+            if command -v az >/dev/null 2>&1; then exit 0; fi
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends ca-certificates curl gnupg lsb-release >/dev/null
+            # Microsoft's documented install script for Debian and Ubuntu.
+            curl -fsSL https://aka.ms/InstallAzureCLIDeb | bash >/dev/null
+            # Check az with a throwaway config dir. A plain `az` call as root
+            # creates /home/agent/.azure owned by root, and the next hook (user
+            # agent) then fails with "Permission denied: .../.azure/config".
+            AZURE_CONFIG_DIR="$(mktemp -d)" az version --output none
+            if [ -d /home/agent/.azure ]; then chown -R agent: /home/agent/.azure; fi
+          user: "0"
+          description: Install the Azure CLI (one time, at create)
+        - command: |
+            set -e
+            az extension add --name azure-devops --only-show-errors --yes 2>/dev/null \
+              || az extension add --name azure-devops --only-show-errors
+            # Do not let `az` send telemetry or ask questions in a headless session.
+            az config set core.collect_telemetry=false core.only_show_errors=true extension.use_dynamic_install=yes_without_prompt --only-show-errors >/dev/null
+            org="${AZURE_DEVOPS_ORG:-}"
+            proj="${AZURE_DEVOPS_PROJECT:-}"
+            if [ -n "$org" ]; then
+              az devops configure --defaults "organization=https://dev.azure.com/$org" >/dev/null
+            fi
+            if [ -n "$proj" ]; then
+              az devops configure --defaults "project=$proj" >/dev/null
+            fi
+          user: agent
+          env: [AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECT]
+          description: Add the azure-devops extension and set the defaults
+        - command: |
+            set -e
+            # git sends the request without credentials and the proxy adds
+            # the token. Never ask for a password in a headless session.
+            git config --global credential.https://dev.azure.com.useHttpPath true
+            git config --global core.askPass ""
+          user: agent
+          description: Configure git for Azure DevOps over HTTPS
+
+  - type: com.docker.sandbox/agent-context@1
+    optional: true
+    config: &agent-context
+      content: |
+        # Azure DevOps
+
+        - `az` (Azure CLI) with the `azure-devops` extension is installed. Use
+          `az repos`, `az repos pr`, `az boards`, `az pipelines` for Azure DevOps.
+        - Authentication is proxy-managed. `AZURE_DEVOPS_EXT_PAT` holds a sentinel,
+          and the sandbox proxy adds the real access token on requests to
+          `dev.azure.com`, `*.dev.azure.com` and `*.visualstudio.com`.
+          Do not run `az login` or `az devops login`. Do not print the token.
+        - Clone with HTTPS, not SSH: `git clone https://dev.azure.com/<org>/<project>/_git/<repo>`.
+          SSH to `ssh.dev.azure.com` is blocked.
+        - For REST calls without a CLI command, use `az devops invoke` or
+          `curl https://dev.azure.com/<org>/_apis/...?api-version=7.1`. The proxy adds
+          the credential, so do not add an Authorization header.
+        - Deleting repositories or projects is blocked by the network policy.
+
+  - type: com.docker.sandbox/agent-context@2
+    optional: true
+    config: *agent-context

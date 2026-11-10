@@ -1,0 +1,72 @@
+# syntax=docker/sandbox-kit:3
+# yaml-language-server: $schema=https://raw.githubusercontent.com/docker/sandbox-kit-spec/main/schema/kit.schema.json
+#
+# Shared defaults for autonomous coding agents (Claude Code and Codex):
+#   - commits carry the user's own Git identity,
+#   - the agents can reach the common package registries, and nothing else,
+#   - both agents read the same working rules.
+#
+# The agent kits (claude, codex-mixin), gh and azure-devops bring their own
+# egress and credentials. This kit adds only what a build or test run needs.
+schemaVersion: "3"
+displayName: Agent workbench
+description: Git identity, package-registry egress and working rules for autonomous coding agents
+licenses: [Apache-2.0]
+
+kind: mixin
+version: "1.0.0"
+provides: ["agent-workbench"]
+
+capabilities:
+  # Commits in the sandbox use the user's name and email from the host.
+  - type: com.docker.sandbox/git-identity@1
+    optional: true
+    description: Attribute commits to the user's Git identity
+
+  - type: com.docker.sandbox/network-policy@2
+    config:
+      runtime:
+        allow:
+          # Package registries for installs and builds. Read-only verbs:
+          # an agent may download packages but may not publish them.
+          - hosts: [registry.npmjs.org, registry.yarnpkg.com]
+            methods: [GET, HEAD]
+          - hosts: [pypi.org, files.pythonhosted.org]
+            methods: [GET, HEAD]
+          - hosts: [api.nuget.org, globalcdn.nuget.org]
+            methods: [GET, HEAD]
+          - hosts: [proxy.golang.org, sum.golang.org]
+            methods: [GET, HEAD]
+          - hosts: [crates.io, index.crates.io, static.crates.io]
+            methods: [GET, HEAD]
+          # Debian packages for `sudo apt-get install`.
+          - hosts: [deb.debian.org, security.debian.org]
+            methods: [GET, HEAD]
+          # Release downloads that tools fetch from GitHub.
+          - hosts: [objects.githubusercontent.com, release-assets.githubusercontent.com, codeload.github.com]
+            methods: [GET, HEAD]
+
+  - type: com.docker.sandbox/agent-context@1
+    optional: true
+    config: &agent-context
+      content: |
+        # Working rules for autonomous agents
+
+        You work in a Docker Sandbox: an isolated microVM with a network
+        allowlist. The workspace folder is mounted from the host; all other
+        files stay in the sandbox.
+
+        - Work on a branch. Do not push to `main` or `master`. Open a pull
+          request: `gh pr create` for GitHub, `az repos pr create` for Azure DevOps.
+        - Run the tests and linters of the repository before you commit.
+        - Write small commits with clear messages. Git uses the identity of the user.
+        - Credentials are proxy-managed: `GH_TOKEN`, `AZURE_DEVOPS_EXT_PAT`,
+          `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` hold sentinels. Do not print
+          them, do not log in, and do not write tokens to files.
+        - The network is an allowlist. When a host is blocked, do not try to go
+          around the block. Report the host to the user, who can run
+          `sbx policy allow network <host>` on the host.
+
+  - type: com.docker.sandbox/agent-context@2
+    optional: true
+    config: *agent-context

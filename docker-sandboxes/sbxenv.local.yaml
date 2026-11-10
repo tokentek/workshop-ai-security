@@ -1,0 +1,38 @@
+# Local overlay for sbxenv.yaml. Use it after the main file:
+#
+#   sbx env run sbxenv.yaml sbxenv.local.yaml --env-arg workspace=$PWD
+#
+# or `agents claude` from the project folder.
+schemaVersion: "1"
+
+args:
+  workspace:
+    required: true
+    description: Absolute path of the project folder (the `agents` script passes $PWD)
+
+# The project folder, mounted read-write at the same path in the sandbox.
+workspace: "${{ env.args.workspace }}"
+
+sandboxOptions:
+  # Use a cached kit image when it is there. Local only.
+  pullPolicy: missing
+
+# The Azure DevOps access token, provisioned for this sandbox only. `sbx env rm`
+# deletes it. The command runs on the host and uses your own `az login`, so no
+# PAT and no secret value is in this file. 499b84ac-... is the Azure DevOps
+# resource ID. An Entra ID token lives approximately one hour; `az` renews it
+# from its refresh token, and a short refresh period keeps the cache fresh.
+# The Anthropic, OpenAI and GitHub secrets are global, see README.md.
+secrets:
+  azure-devops:
+    command: /opt/homebrew/bin/az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken --output tsv
+    refresh: 5m
+
+# The hosts where the proxy may use the token.
+bindings:
+  azure-devops:
+    apiKey:
+      domains:
+        - dev.azure.com
+        - "*.dev.azure.com"
+        - "*.visualstudio.com"

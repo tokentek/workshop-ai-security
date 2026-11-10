@@ -54,6 +54,9 @@ Add `google.com` to `ALLOWED_SITES` in `firewall.sh`, then run
 
 ## Good to know
 
+- Claude Desktop cannot connect to this container, because it has no SSH server. To use
+  Claude Desktop, use the [demo devcontainer](../.devcontainer/README.md#connect-from-claude-desktop-ssh)
+  at the repo root.
 - A dev container is a strong fence, not a perfect wall. It protects you from mistakes and
   misbehaving tools, not from a skilled attacker.
 - Changes in your project folder are real. Use Git, so you can undo what Claude changes.

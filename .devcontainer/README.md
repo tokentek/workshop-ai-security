@@ -64,12 +64,17 @@ Claude Desktop can run a Code session over SSH. The container has an SSH server 
      StrictHostKeyChecking accept-new
    ```
 
-3. Test it in a terminal: `ssh ai-workshop-demo claude --version`.
-4. In Claude Desktop, select **New environment > SSH**, and type `ai-workshop-demo` as the SSH host.
+3. Test it in a terminal: `ssh ai-workshop-demo claude --version`. If it shows a version, SSH works.
+4. Log in to Claude Code one time, if you did not do it before (see "Log in one time").
+5. In Claude Desktop, select **New environment > SSH**, and type `ai-workshop-demo` as the SSH host.
+6. Select a folder in the container for the session.
+
+How it works: the `ProxyCommand` starts `sshd` in the container with `docker exec`. At each start, `postStartCommand` copies your public key to `~/.ssh/authorized_keys` in the container.
 
 Good to know:
 
 - The connection uses `docker exec`, so the container opens no network port.
+- The firewall stays on. Claude can reach only the sites in `allowedSites`.
 - The key `~/.ssh/ai-workshop-demo` is for this container only. Only the public key goes into the container.
 - The first connection installs Claude Code in `~/.claude/remote/` (about 1 GB, in the login volume, one time only).
 - A rebuild makes new SSH host keys. If SSH shows a host-key warning, run `ssh-keygen -R ai-workshop-demo`.

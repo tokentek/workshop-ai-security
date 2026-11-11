@@ -2,3 +2,4 @@
 node_modules/
 .devcontainer/features/corporate-ca/certs/*.crt
 .claude/worktrees/*
+.claude/worktrees
